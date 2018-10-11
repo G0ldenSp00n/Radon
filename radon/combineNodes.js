@@ -13,6 +13,11 @@ const virtualSilo = {};
  */
 
 function combineNodes(...args) {
+  let devTool = null;
+  if(args[0] && args[0].devTool === true) {
+    devTool = args[0];
+    args.shift();
+  }
   if (args.length === 0) throw new Error('combineNodes function takes at least one constructorNode');
 
   // hastable accounts for passing in constructorNodes in any order. 
@@ -55,7 +60,7 @@ function combineNodes(...args) {
     // loop through the children arrays in the hashtable
     hashTable[constructorNodeName].forEach(currConstructorNode => {
       const valuesOfCurrSiloNode = {};
-      children[currConstructorNode.name] = new SiloNode(currConstructorNode.name, valuesOfCurrSiloNode, parentConstructorNode, {}, types.CONTAINER);
+      children[currConstructorNode.name] = new SiloNode(currConstructorNode.name, valuesOfCurrSiloNode, parentConstructorNode, {}, types.CONTAINER, devTool);
       
       // abstract some variables
       const currSiloNode = children[currConstructorNode.name];
@@ -69,7 +74,7 @@ function combineNodes(...args) {
         }
         // otherwise primitives can be stored in siloNodes and the modifiers run
         else {
-          valuesOfCurrSiloNode[varInConstructorNodeState] = new SiloNode(varInConstructorNodeState, stateOfCurrConstructorNode[varInConstructorNodeState].value, currSiloNode, stateOfCurrConstructorNode[varInConstructorNodeState].modifiers);
+          valuesOfCurrSiloNode[varInConstructorNodeState] = new SiloNode(varInConstructorNodeState, stateOfCurrConstructorNode[varInConstructorNodeState].value, currSiloNode, stateOfCurrConstructorNode[varInConstructorNodeState].modifiers, types.PRIMITIVE, devTool);
           valuesOfCurrSiloNode[varInConstructorNodeState].linkModifiers();
         }
       })
@@ -114,22 +119,18 @@ function combineNodes(...args) {
     })
   }
 
-    virtualize();
-      
+  virtualize();
     
-    forEachSiloNode(node => {
-      // apply keySubscribe only to object and array silo nodes
-      if (node.type === 'OBJECT' || node.type === "ARRAY") {
-        node.modifiers.keySubscribe = (key, renderFunc) => {
-          const name = node.name + "_" + key;
-          const subscribedAtIndex = node.value[name].pushToSubscribers(renderFunc);
-          node.value[name].notifySubscribers();
-          return () => {node.removeFromSubscribersAtIndex(subscribedAtIndex)}
-        }
-      }})
-    
-    
-
+  forEachSiloNode(node => {
+    // apply keySubscribe only to object and array silo nodes
+    if (node.type === 'OBJECT' || node.type === "ARRAY") {
+      node.modifiers.keySubscribe = (key, renderFunc) => {
+        const name = node.name + "_" + key;
+        const subscribedAtIndex = node.value[name].pushToSubscribers(renderFunc);
+        node.value[name].notifySubscribers();
+        return () => {node.removeFromSubscribersAtIndex(subscribedAtIndex)}
+      }
+    }})
   
   silo.virtualSilo = virtualSilo;
   return silo;
@@ -191,16 +192,9 @@ silo.subscribe = (renderFunction, name) => {
     }
   })
 
-  function unsubscribe() {
-    let ob;
-    Object.keys(foundNodeChildren).forEach(key => {
-      ob = foundNodeChildren[key]; 
-      ob.node.removeFromSubscribersAtIndex(ob.index)
-    })
-  }
+  let unsubscribe;
   
   if (!!foundNode) {
-    
     if (foundNode.value) {
       Object.keys(foundNode.value).forEach(key => {
         let node = foundNode.value[key];
@@ -211,12 +205,24 @@ silo.subscribe = (renderFunction, name) => {
         }
       })
     }
+
+    unsubscribe = () =>  {
+      let ob;
+      Object.keys(foundNodeChildren).forEach(key => {
+        ob = foundNodeChildren[key]; 
+        ob._subscribers.splice(ob.index, 1)
+      })
+    }
+
     foundNode.notifySubscribers();
+    return unsubscribe;
+
   } else {
     console.error(new Error('You are trying to subscribe to something that isn\'t in the silo.'));
+    return function errFunc () {
+      console.error(new Error('You are trying to run unsubscribe from something that wasn\'t in the silo in the first place.'))
+    }
   }
-
-  return unsubscribe;
 }
 
 export default combineNodes;
